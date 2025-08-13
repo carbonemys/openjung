@@ -220,11 +220,60 @@ elif page == "Take Test":
     # Check if a test was just finished
     if st.session_state.get('test_finished'):
         st.subheader("Your Test Results")
-        st.write("Here are the raw counts based on your answers:")
         
         scores = st.session_state.get('final_scores', {})
-        for function, score in scores.items():
-            st.write(f"- **{function}:** {score}")
+        
+        # --- Table 1: Ranked Single-Letter Functions ---
+        st.write("#### Ranked Primary Functions")
+        primary_functions = {key: val for key, val in scores.items() if len(key) == 1}
+        
+        if primary_functions:
+            import pandas as pd
+            # Sort the functions by score
+            ranked_df = pd.DataFrame(
+                list(primary_functions.items()), 
+                columns=['Function', 'Score']
+            ).sort_values('Score', ascending=False).reset_index(drop=True)
+            st.table(ranked_df)
+        else:
+            st.write("No primary function scores were recorded.")
+
+        # --- Table 2: Between-Functions Comparison ---
+        st.write("#### Function Dichotomies")
+        dichotomy_pairs = [('Fe', 'Fi'), ('Ne', 'Ni'), ('Se', 'Si'), ('Te', 'Ti')]
+        
+        comparison_data = []
+        for func1, func2 in dichotomy_pairs:
+            comparison_data.append({
+                f"{func1} Score": scores.get(func1, 0),
+                "vs": f"{func1} vs {func2}",
+                f"{func2} Score": scores.get(func2, 0)
+            })
+        
+        if comparison_data:
+            comparison_df = pd.DataFrame(comparison_data)
+            # Reorder columns for clarity
+            comparison_df = comparison_df[[
+                f"{d[0]} Score" for d in dichotomy_pairs] + 
+                ['vs'] + 
+                [f"{d[1]} Score" for d in dichotomy_pairs]
+            ]
+            # A bit of a hack to get the columns in the right order for display
+            # Let's build it more robustly
+            display_df_data = []
+            for func1, func2 in dichotomy_pairs:
+                 display_df_data.append({
+                     'Function 1': func1,
+                     'Score 1': scores.get(func1, 0),
+                     '': 'vs',
+                     'Function 2': func2,
+                     'Score 2': scores.get(func2, 0)
+                 })
+            display_df = pd.DataFrame(display_df_data)
+            st.table(display_df)
+        else:
+            st.write("No detailed function scores were recorded.")
+
 
         if st.button("Take Test Again"):
             # Clear the results and test state to start over
