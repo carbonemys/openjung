@@ -2,30 +2,6 @@
 import streamlit as st
 from supabase import create_client, Client
 from dotenv import load_dotenv, dotenv_values
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Get Supabase credentials from .env file
-supabase_url = dotenv_values().get("supabaseurl")
-supabase_key = dotenv_values().get("SUPABASE_ANON_KEY")
-
-# Initialize Supabase client
-# Handle potential errors during initialization
-try:
-    if supabase_url and supabase_key:
-        supabase: Client = create_client(supabase_url, supabase_key)
-        client_initialized = True
-    else:
-        client_initialized = False
-except Exception as e:
-    client_initialized = False
-    st.error(f"Failed to initialize Supabase client: {e}")
-
-
-import streamlit as st
-from supabase import create_client, Client
-from dotenv import load_dotenv, dotenv_values
 import os
 
 # Load environment variables from .env file
@@ -36,6 +12,7 @@ supabase_url = dotenv_values().get("supabaseurl")
 supabase_key = dotenv_values().get("SUPABASE_ANON_KEY")
 
 # Initialize Supabase client
+# Handle potential errors during initialization
 try:
     if supabase_url and supabase_key:
         supabase: Client = create_client(supabase_url, supabase_key)
@@ -171,9 +148,12 @@ if st.sidebar.button("Question Bank", use_container_width=True):
     set_page("Question Bank")
 
 # Conditional Moderator Tools button
+if current_user:
+    if st.sidebar.button("Submit Question", use_container_width=True):
+        set_page("Submit Question")
 if current_role == 'moderator':
-    if st.sidebar.button("Moderator Tools", use_container_width=True):
-        set_page("Moderator Tools")
+    if st.sidebar.button("Edit Questions", use_container_width=True):
+        set_page("Edit Questions")
 
 st.sidebar.divider()
 
@@ -184,7 +164,7 @@ if current_user:
         sign_out()
         st.rerun()
 else:
-    st.sidebar.write("You are not logged in.")
+    st.sidebar.info("You are browsing as a guest. Login to vote or submit questions.")
     with st.sidebar.form("auth_form"):
         st.subheader("Login / Sign Up")
         email = st.text_input("Email")
@@ -203,53 +183,20 @@ else:
 page = st.session_state.page
 
 if page == "Home":
-    st.header("Welcome")
-    st.write("This application is under construction.")
+    st.header("Welcome to the Jungian Cognitive Function Test")
+    st.write("""
+This test is designed to help you understand your cognitive functions based on the theories of Carl Jung. 
+It avoids the pitfalls of many online personality tests by focusing on the core principles of Jungian psychology.
+Please answer the questions as honestly as possible to get the most accurate results.
+""")
+    if st.button("Take the Test Now!"):
+        set_page("Take Test")
+        st.rerun()
+
     if client_initialized:
         st.success("Successfully connected to Supabase!")
     else:
         st.error("Failed to connect to Supabase. Please check your credentials.")
-
-elif page == "Moderator Tools":
-    st.header("Moderator Tools")
-    if current_role == 'moderator': # Protect this page
-        st.subheader("Add New Question")
-
-        with st.form("new_question_form"):
-            question_text = st.text_area("Question", key="question_text")
-            a_answer = st.text_input("Option A Answer", key="a_answer")
-            b_answer = st.text_input("Option B Answer", key="b_answer")
-            a_function = st.text_input("Option A Function (e.g., Fe, Ne)", key="a_function")
-            b_function = st.text_input("Option B Function (e.g., Fi, Ni)", key="b_function")
-            question_dimension = st.selectbox("Question Dimension", ["between_functions", "within_functions"], key="question_dimension")
-            question_type = st.selectbox("Question Type", ["scenario_based", "self_reported", "interests"], key="question_type")
-            additional_info = st.text_area("Additional Info (Optional)", key="additional_info")
-
-            submitted = st.form_submit_button("Add Question")
-
-            if submitted:
-                if client_initialized:
-                    try:
-                        response = supabase.table("questions").insert({
-                            "question": question_text,
-                            "status": "draft",
-                            "a_function": a_function,
-                            "b_function": b_function,
-                            "a_answer": a_answer,
-                            "b_answer": b_answer,
-                            "question_dimension": question_dimension,
-                            "question_type": question_type,
-                            "additional_info": additional_info
-                        }).execute()
-                        st.success("Question added successfully!")
-                        st.json(response.data) # Display response data for debugging
-                    except Exception as e:
-                        st.error(f"Error adding question: {e}")
-                else:
-                    st.error("Supabase client not initialized. Cannot add question.")
-        
-            else:
-                st.warning("Please log in to access Moderator Tools.")
 
 elif page == "Take Test":
     st.header("Take the Test")
@@ -288,15 +235,7 @@ elif page == "Take Test":
             })
         
         if comparison_data:
-            comparison_df = pd.DataFrame(comparison_data)
-            # Reorder columns for clarity
-            comparison_df = comparison_df[[
-                f"{d[0]} Score" for d in dichotomy_pairs] + 
-                ['vs'] + 
-                [f"{d[1]} Score" for d in dichotomy_pairs]
-            ]
-            # A bit of a hack to get the columns in the right order for display
-            # Let's build it more robustly
+            import pandas as pd
             display_df_data = []
             for func1, func2 in dichotomy_pairs:
                  display_df_data.append({
@@ -336,7 +275,7 @@ elif page == "Take Test":
         questions = st.session_state.get('questions', [])
 
         if not questions:
-            st.info("No approved questions available yet. Please add some via Moderator Tools.")
+            st.info("No approved questions available yet. Please check back later.")
         else:
             total_questions = len(questions)
             current_index = st.session_state.current_question_index
@@ -430,13 +369,50 @@ elif page == "Take Test":
                     st.session_state.final_scores = scores
                     st.rerun()
 
-elif page == "Question Bank":
-    st.header("Question Bank")
+elif page == "Submit Question":
+    st.header("Submit a New Question")
+    if current_user: # Protect this page
+        st.write("Submit your question for review. It will be added to the question bank with a 'draft' status.")
+        with st.form("new_question_form", clear_on_submit=True):
+            question_text = st.text_area("Question", key="question_text")
+            a_answer = st.text_input("Option A Answer", key="a_answer")
+            b_answer = st.text_input("Option B Answer", key="b_answer")
+            a_function = st.text_input("Option A Function (e.g., Fe, Ne)", key="a_function")
+            b_function = st.text_input("Option B Function (e.g., Fi, Ni)", key="b_function")
+            question_dimension = st.selectbox("Question Dimension", ["between_functions", "within_functions"], key="question_dimension")
+            question_type = st.selectbox("Question Type", ["scenario_based", "self_reported", "interests"], key="question_type")
+            additional_info = st.text_area("Additional Info (Optional)", key="additional_info")
 
-    # Moderator View (Full Edit/Delete Access)
-    if current_role == 'moderator':
-        st.subheader("Moderator Tools")
+            submitted = st.form_submit_button("Submit for Review")
+
+            if submitted:
+                if client_initialized:
+                    try:
+                        response = supabase.table("questions").insert({
+                            "question": question_text,
+                            "status": "draft", # All submissions are drafts
+                            "a_function": a_function,
+                            "b_function": b_function,
+                            "a_answer": a_answer,
+                            "b_answer": b_answer,
+                            "question_dimension": question_dimension,
+                            "question_type": question_type,
+                            "additional_info": additional_info,
+                            "submitted_by": current_user.id # Track who submitted it
+                        }).execute()
+                        st.success("Question submitted successfully for review!")
+                    except Exception as e:
+                        st.error(f"Error submitting question: {e}")
+                else:
+                    st.error("Supabase client not initialized. Cannot submit question.")
+    else:
+        st.warning("Please log in to submit a question.")
+
+elif page == "Edit Questions":
+    st.header("Edit Questions")
+    if current_role == 'moderator': # PROTECTED: Moderators only
         try:
+            # Fetch all questions for editing
             response = supabase.table("questions").select("*").order("id", desc=True).execute()
             questions = response.data
         except Exception as e:
@@ -444,16 +420,16 @@ elif page == "Question Bank":
             questions = []
 
         if not questions:
-            st.info("No questions found. Add some from the 'Moderator Tools' page.")
+            st.info("No questions found to edit.")
             st.stop()
 
-        # Display Questions in a DataFrame
+        # Display Questions in a DataFrame for context
         import pandas as pd
         df = pd.DataFrame(questions)
         display_columns = [
-            'id', 'question', 'status', 'question_dimension', 
+            'id', 'question', 'status', 'question_dimension',
             'a_answer', 'a_function', 'b_answer', 'b_function',
-            'upvotes', 'downvotes' # Add vote counts
+            'upvotes', 'downvotes'
         ]
         display_columns = [col for col in display_columns if col in df.columns]
         st.dataframe(df[display_columns])
@@ -464,14 +440,16 @@ elif page == "Question Bank":
         st.subheader("Edit a Question")
         questions_dict = {q['id']: q for q in questions}
         question_ids = [q['id'] for q in questions]
-        selected_id = st.selectbox("Select Question ID to Edit", options=question_ids)
+        # Format IDs with question text for easier selection
+        question_options = {q['id']: f"ID: {q['id']} - {q['question'][:50]}..." for q in questions}
+        selected_id = st.selectbox("Select Question to Edit", options=question_ids, format_func=lambda x: question_options[x])
 
         if selected_id:
             selected_question = questions_dict[selected_id]
             with st.form(key=f"edit_form_{selected_id}"):
                 st.write(f"Editing Question ID: {selected_question['id']}")
-            
-                status_options = ["draft", "approved", "rejected"]
+
+                status_options = ["draft", "approved", "rejected", "retired"]
                 current_status_index = status_options.index(selected_question.get('status', 'draft'))
                 dim_options = ["between_functions", "within_functions"]
                 current_dim_index = dim_options.index(selected_question.get('question_dimension', 'between_functions'))
@@ -483,12 +461,13 @@ elif page == "Question Bank":
                 a_function = st.text_input("Option A Function", value=selected_question.get('a_function', ''))
                 b_answer = st.text_input("Option B Answer", value=selected_question.get('b_answer', ''))
                 b_function = st.text_input("Option B Function", value=selected_question.get('b_function', ''))
-                
+
                 col1, col2 = st.columns(2)
                 with col1:
                     update_button = st.form_submit_button("Update Question")
                 with col2:
-                    delete_button = st.form_submit_button("Delete Question", type="primary")
+                    # Make delete more prominent and dangerous
+                    delete_button = st.form_submit_button("⚠️ Delete Question", type="primary")
 
                 if update_button:
                     try:
@@ -506,96 +485,117 @@ elif page == "Question Bank":
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to update question: {e}")
-                
+
                 if delete_button:
-                    try:
-                        supabase.table("questions").delete().eq("id", selected_id).execute()
-                        st.success(f"Successfully deleted Question ID: {selected_id}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to delete question: {e}")
-    
-    # Public / User View
+                    # Add a confirmation step to prevent accidental deletion
+                    if st.checkbox(f"Confirm deletion of question {selected_id}", key=f"delete_confirm_{selected_id}"):
+                        try:
+                            supabase.table("questions").delete().eq("id", selected_id).execute()
+                            st.success(f"Successfully deleted Question ID: {selected_id}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to delete question: {e}")
+                    else:
+                        st.warning("Please check the confirmation box to delete.")
+
     else:
-        st.write("Here you can view and discuss approved questions.")
-        try:
-            # Fetch questions and their comments in one go.
-            response = supabase.table("questions").select("*, comments(*, profiles(role))").eq("status", "approved").order("id", desc=True).execute()
-            questions = response.data
-        except Exception as e:
-            st.error(f"Error fetching questions: {e}")
-            questions = []
+        st.error("You do not have permission to access this page.")
+        st.info("Only moderators can edit questions.")
 
-        if not questions:
-            st.info("There are no approved questions to display yet.")
-            st.stop()
 
-        if 'voted_on' not in st.session_state:
-            st.session_state.voted_on = []
+elif page == "Question Bank":
+    st.header("Question Bank")
+    st.write("Here you can view, vote, and comment on questions.")
+    st.info("Questions with 'approved' status are used in the test.")
 
-        for q in questions:
-            st.write(f"**Question:** {q['question']}")
+    try:
+        # Fetch all questions visible to the public (approved or pending)
+        # Also fetch comments and user roles for display
+        response = supabase.table("questions").select("*, comments(*, profiles(role))").in_("status", ["approved", "draft", "rejected"]).order("id", desc=True).execute()
+        questions = response.data
+    except Exception as e:
+        st.error(f"Error fetching questions: {e}")
+        questions = []
+
+    if not questions:
+        st.info("There are no questions to display yet.")
+        st.stop()
+
+    # Initialize session state for voted questions to prevent re-voting
+    if 'voted_on' not in st.session_state:
+        st.session_state.voted_on = {}
+
+    for q in questions:
+        # Use an expander for each question to keep the UI clean
+        with st.expander(f"ID: {q['id']} | Status: {q['status'].capitalize()} | {q['question']}", expanded=False):
+            st.write(f"**Dimension:** {q['question_dimension']}")
             st.write(f"A: {q['a_answer']} ({q['a_function']})")
             st.write(f"B: {q['b_answer']} ({q['b_function']})")
-            
+            if q.get('additional_info'):
+                st.info(f"Additional Info: {q['additional_info']}")
+
             # --- Voting Section ---
             col1, col2, col3 = st.columns([1, 1, 5])
+            
+            # FIX: Ensure vote_disabled is always a boolean
+            is_voted = bool(st.session_state.voted_on.get(q['id']))
+            vote_disabled = not current_user or is_voted
+
             with col1:
-                # Disable buttons if not logged in OR if already voted
-                vote_disabled = not current_user or q['id'] in st.session_state.voted_on
-                if st.button(f"👍 ({q.get('upvotes', 0)})", key=f"up_{q['id']}", disabled=vote_disabled):
+                if st.button(f"👍 ({q.get('upvotes', 0)})", key=f"up_{q['id']}", disabled=vote_disabled, help="You must be logged in to vote."):
                     try:
-                        new_count = q.get('upvotes', 0) + 1
-                        supabase.table("questions").update({"upvotes": new_count}).eq("id", q['id']).execute()
-                        st.session_state.voted_on.append(q['id'])
+                        # Use an RPC call for atomic increment to prevent race conditions
+                        supabase.rpc('increment_upvotes', {'question_id_to_update': q['id']}).execute()
+                        st.session_state.voted_on[q['id']] = 'up'
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error upvoting: {e}")
             with col2:
-                vote_disabled = not current_user or q['id'] in st.session_state.voted_on
-                if st.button(f"👎 ({q.get('downvotes', 0)})", key=f"down_{q['id']}", disabled=vote_disabled):
+                if st.button(f"👎 ({q.get('downvotes', 0)})", key=f"down_{q['id']}", disabled=vote_disabled, help="You must be logged in to vote."):
                     try:
-                        new_count = q.get('downvotes', 0) + 1
-                        supabase.table("questions").update({"downvotes": new_count}).eq("id", q['id']).execute()
-                        st.session_state.voted_on.append(q['id'])
+                        supabase.rpc('increment_downvotes', {'question_id_to_update': q['id']}).execute()
+                        st.session_state.voted_on[q['id']] = 'down'
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error downvoting: {e}")
+            
+            if vote_disabled and current_user:
+                st.caption(f"You have already voted on this question.")
+
 
             # --- Comments Section ---
-            with st.expander("View and Add Comments"):
-                comments = q.get('comments', [])
-                if comments:
-                    for comment in comments:
-                        commenter_role = "User"
-                        if comment.get('profiles') and comment['profiles'].get('role'):
-                            commenter_role = comment['profiles']['role'].capitalize()
-                        st.markdown(f"**{commenter_role}:** {comment['comment_text']}")
-                        st.caption(f"Posted at: {comment['created_at']}")
-                else:
-                    st.write("No comments yet.")
+            st.markdown("---")
+            st.subheader("Comments")
+            comments = sorted(q.get('comments', []), key=lambda c: c['created_at'], reverse=True)
+            if comments:
+                for comment in comments:
+                    commenter_role = "User"
+                    if comment.get('profiles') and comment['profiles'].get('role'):
+                        commenter_role = comment['profiles']['role'].capitalize()
+                    st.markdown(f"**{commenter_role}** ({comment['created_at']}):")
+                    st.markdown(f"> {comment['comment_text']}")
+            else:
+                st.write("No comments yet.")
 
-                # Show comment form ONLY to logged-in users
-                if current_user:
-                    with st.form(key=f"comment_form_{q['id']}", clear_on_submit=True):
-                        comment_text = st.text_area("Write a comment...", key=f"comment_text_{q['id']}")
-                        submit_comment = st.form_submit_button("Post Comment")
-                        if submit_comment and comment_text:
-                            try:
-                                supabase.table("comments").insert({
-                                    "question_id": q['id'],
-                                    "user_id": current_user.id,
-                                    "comment_text": comment_text
-                                }).execute()
-                                st.success("Comment posted!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error posting comment: {e}")
-                # Show message to guests
-                else:
-                    st.info("Log in to vote or post a comment.")
-            
-            st.divider()
+            # Show comment form ONLY to logged-in users
+            if current_user:
+                with st.form(key=f"comment_form_{q['id']}", clear_on_submit=True):
+                    comment_text = st.text_area("Write a comment...", key=f"comment_text_{q['id']}")
+                    submit_comment = st.form_submit_button("Post Comment")
+                    if submit_comment and comment_text:
+                        try:
+                            supabase.table("comments").insert({
+                                "question_id": q['id'],
+                                "user_id": current_user.id,
+                                "comment_text": comment_text
+                            }).execute()
+                            st.success("Comment posted!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error posting comment: {e}")
+            # Show message to guests
+            else:
+                st.info("Log in to vote or post a comment.")
 
 
 
