@@ -23,26 +23,7 @@ except Exception as e:
     client_initialized = False
     st.error(f"Failed to initialize Supabase client: {e}")
 
-# --- Authentication --- #
-def get_current_user():
-    if 'user' not in st.session_state:
-        st.session_state.user = None
-    
-    # Attempt to get session from Supabase
-    try:
-        session_response = supabase.auth.get_session()
-        print(f"Session Response: {session_response}") # Debugging line
-        if session_response and session_response.session:
-            st.session_state.user = session_response.session.user
-            print(f"User from session: {st.session_state.user.email}") # Debugging line
-        else:
-            st.session_state.user = None
-            print("No active session found.") # Debugging line
-    except Exception as e:
-        st.session_state.user = None
-        print(f"Could not retrieve session: {e}") # Debugging line
-    
-    return st.session_state.user
+
 
 def sign_up(email, password):
     try:
@@ -207,48 +188,122 @@ elif page == "Take Test":
         
         scores = st.session_state.get('final_scores', {})
         
-        # --- Table 1: Ranked Single-Letter Functions ---
+        # --- Chart 1: Ranked Single-Letter Functions ---
         st.write("#### Ranked Primary Functions")
         primary_functions = {key: val for key, val in scores.items() if len(key) == 1}
         
         if primary_functions:
             import pandas as pd
-            # Sort the functions by score
+            import altair as alt
+
             ranked_df = pd.DataFrame(
                 list(primary_functions.items()), 
                 columns=['Function', 'Score']
-            ).sort_values('Score', ascending=False).reset_index(drop=True)
-            st.table(ranked_df)
+            ).sort_values('Score', ascending=False)
+
+            bar = alt.Chart(ranked_df).mark_bar().encode(
+                x=alt.X('Score', type='quantitative'),
+                y=alt.Y('Function', type='nominal', sort='-x')
+            )
+            
+            text = bar.mark_text(
+                align='left',
+                baseline='middle',
+                dx=3  # Nudges text to right so it doesn't overlap
+            ).encode(
+                text='Score:Q'
+            )
+
+            chart = (bar + text).properties(title='Primary Function Scores')
+            st.altair_chart(chart, use_container_width=True)
         else:
             st.write("No primary function scores were recorded.")
 
-        # --- Table 2: Between-Functions Comparison ---
+        # --- Chart 2: Function Dichotomies (Diverging Bar Chart) ---
         st.write("#### Function Dichotomies")
         dichotomy_pairs = [('Fe', 'Fi'), ('Ne', 'Ni'), ('Se', 'Si'), ('Te', 'Ti')]
         
-        comparison_data = []
+        chart_data = []
         for func1, func2 in dichotomy_pairs:
-            comparison_data.append({
-                f"{func1} Score": scores.get(func1, 0),
-                "vs": f"{func1} vs {func2}",
-                f"{func2} Score": scores.get(func2, 0)
-            })
-        
-        if comparison_data:
+            score1 = scores.get(func1, 0)
+            score2 = scores.get(func2, 0)
+            chart_data.append({'pair': f'{func1} / {func2}', 'function': func1, 'score': score1, 'abs_score': score1})
+            chart_data.append({'pair': f'{func1} / {func2}', 'function': func2, 'score': -score2, 'abs_score': score2})
+
+        if chart_data:
             import pandas as pd
-            display_df_data = []
-            for func1, func2 in dichotomy_pairs:
-                 display_df_data.append({
-                     'Function 1': func1,
-                     'Score 1': scores.get(func1, 0),
-                     '': 'vs',
-                     'Function 2': func2,
-                     'Score 2': scores.get(func2, 0)
-                 })
-            display_df = pd.DataFrame(display_df_data)
-            st.table(display_df)
+            import altair as alt
+
+            df = pd.DataFrame(chart_data)
+
+            bar = alt.Chart(df).mark_bar().encode(
+                x='score:Q',
+                y='pair:N',
+                color=alt.Color('function:N',
+                                scale=alt.Scale(
+                                    domain=['Fe', 'Fi', 'Ne', 'Ni', 'Se', 'Si', 'Te', 'Ti'],
+                                    range=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+                                ))
+            )
+
+            text = alt.Chart(df).mark_text(
+                align='left',
+                baseline='middle',
+                dx=3
+            ).encode(
+                x='score:Q',
+                y='pair:N',
+                text='abs_score:Q'
+            )
+
+            chart = (bar + text).properties(title='Function Pair Balances')
+            st.altair_chart(chart, use_container_width=True)
         else:
             st.write("No detailed function scores were recorded.")
+
+        # --- Chart 3: Blended Function Dichotomies ---
+        st.write("#### Blended Function Strength")
+        
+        blended_chart_data = []
+        for func1, func2 in dichotomy_pairs:
+            parent_func = func1[0]
+            
+            score1 = scores.get(func1, 0) * scores.get(parent_func, 0)
+            score2 = scores.get(func2, 0) * scores.get(parent_func, 0)
+            
+            blended_chart_data.append({'pair': f'{func1} / {func2}', 'function': func1, 'score': score1, 'abs_score': score1})
+            blended_chart_data.append({'pair': f'{func1} / {func2}', 'function': func2, 'score': -score2, 'abs_score': score2})
+
+        if blended_chart_data:
+            import pandas as pd
+            import altair as alt
+
+            df_blended = pd.DataFrame(blended_chart_data)
+
+            bar = alt.Chart(df_blended).mark_bar().encode(
+                x='score:Q',
+                y='pair:N',
+                color=alt.Color('function:N',
+                                scale=alt.Scale(
+                                    domain=['Fe', 'Fi', 'Ne', 'Ni', 'Se', 'Si', 'Te', 'Ti'],
+                                    range=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+                                ))
+            )
+
+            text = alt.Chart(df_blended).mark_text(
+                align='left',
+                baseline='middle',
+                dx=3
+            ).encode(
+                x='score:Q',
+                y='pair:N',
+                text='abs_score:Q'
+            )
+
+            blended_chart = (bar + text).properties(title='Blended Function Pair Balances (Weighted by Primary Function)')
+            st.altair_chart(blended_chart, use_container_width=True)
+        else:
+            st.write("No blended function scores could be calculated.")
 
 
         if st.button("Take Test Again"):
