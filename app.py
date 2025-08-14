@@ -482,9 +482,8 @@ elif page == "Edit Questions":
         import pandas as pd
         df = pd.DataFrame(questions)
         display_columns = [
-            'id', 'question', 'status', 'question_dimension',
+            'id', 'question', 'status', 'upvotes', 'downvotes', 'question_dimension',
             'a_answer', 'a_function', 'b_answer', 'b_function',
-            'upvotes', 'downvotes'
         ]
         display_columns = [col for col in display_columns if col in df.columns]
         st.dataframe(df[display_columns])
@@ -496,7 +495,7 @@ elif page == "Edit Questions":
         questions_dict = {q['id']: q for q in questions}
         question_ids = [q['id'] for q in questions]
         # Format IDs with question text for easier selection
-        question_options = {q['id']: f"ID: {q['id']} - {q['question'][:50]}..." for q in questions}
+        question_options = {q['id']: f"{q['question'][:60]}... ({q['status']})" for q in questions}
         selected_id = st.selectbox("Select Question to Edit", options=question_ids, format_func=lambda x: question_options[x])
 
         if selected_id:
@@ -504,7 +503,7 @@ elif page == "Edit Questions":
             with st.form(key=f"edit_form_{selected_id}"):
                 st.write(f"Editing Question ID: {selected_question['id']}")
 
-                status_options = ["draft", "approved", "rejected", "retired"]
+                status_options = ["draft", "approved", "rejected", "retired", "draft"]
                 current_status_index = status_options.index(selected_question.get('status', 'draft'))
                 dim_options = ["between_functions", "within_functions"]
                 current_dim_index = dim_options.index(selected_question.get('question_dimension', 'between_functions'))
@@ -516,6 +515,7 @@ elif page == "Edit Questions":
                 a_function = st.text_input("Option A Function", value=selected_question.get('a_function', ''))
                 b_answer = st.text_input("Option B Answer", value=selected_question.get('b_answer', ''))
                 b_function = st.text_input("Option B Function", value=selected_question.get('b_function', ''))
+                additional_info = st.text_area("Additional Info", value=selected_question.get('additional_info', ''))
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -533,8 +533,10 @@ elif page == "Edit Questions":
                             "a_answer": a_answer,
                             "a_function": a_function,
                             "b_answer": b_answer,
-                            "b_function": b_function
+                            "b_function": b_function,
+                            "additional_info": additional_info
                         }
+                        
                         supabase.table("questions").update(update_data).eq("id", selected_id).execute()
                         st.success(f"Successfully updated Question ID: {selected_id}")
                         st.rerun()
@@ -561,19 +563,51 @@ elif page == "Edit Questions":
 elif page == "Question Bank":
     st.header("Question Bank")
     st.write("Here you can view, vote, and comment on questions.")
-    st.info("Questions with 'approved' status are used in the test.")
+
+    st.subheader("Filter and Order Questions")
+    
+    # --- Filtering and Ordering UI ---
+    col1, col2 = st.columns(2)
+    with col1:
+        # Sort by 'created_at', 'upvotes', 'downvotes'
+        order_by = st.selectbox(
+            "Order by",
+            options=['created_at', 'upvotes', 'downvotes'],
+            format_func=lambda x: x.replace('_', ' ').capitalize()
+        )
+        order_asc = st.checkbox("Ascending", False) # False = descending by default
+
+    with col2:
+        # Filter by status
+        selected_statuses = st.multiselect(
+            "Filter by Status",
+            options=['approved', 'pending', 'rejected', 'retired', 'draft'],
+            default=['approved', 'pending'] # Default to most common view
+        )
 
     try:
-        # Fetch all questions visible to the public (approved or pending)
-        # Also fetch comments and user roles for display
-        response = supabase.table("questions").select("*, comments(*, profiles(role))").in_("status", ["approved", "draft", "rejected"]).order("id", desc=True).execute()
+        # Base query
+        query = supabase.table("questions").select("*, comments(*, profiles(role))")
+
+        # Apply filters
+        if selected_statuses:
+            query = query.in_("status", selected_statuses)
+        else:
+            # If nothing is selected, show nothing, as it's less confusing than showing all.
+            st.info("Select at least one status to see questions.")
+            st.stop()
+
+        # Apply ordering
+        query = query.order(order_by, desc=(not order_asc))
+        
+        response = query.execute()
         questions = response.data
     except Exception as e:
         st.error(f"Error fetching questions: {e}")
         questions = []
 
     if not questions:
-        st.info("There are no questions to display yet.")
+        st.info("No questions match your current filter settings.")
         st.stop()
 
     # Initialize session state for voted questions to prevent re-voting
@@ -582,12 +616,12 @@ elif page == "Question Bank":
 
     for q in questions:
         # Use an expander for each question to keep the UI clean
-        with st.expander(f"ID: {q['id']} | Status: {q['status'].capitalize()} | {q['question']}", expanded=False):
-            st.write(f"**Dimension:** {q['question_dimension']}")
-            st.write(f"A: {q['a_answer']} ({q['a_function']})")
-            st.write(f"B: {q['b_answer']} ({q['b_function']})")
+        with st.expander(f"{q['question']} ({q['status'].capitalize()}) | 👍 {q.get('upvotes', 0)} 👎 {q.get('downvotes', 0)}", expanded=False):
+            st.write(f"**Dimension:** {q.get('question_dimension', 'N/A')}")
+            st.write(f"**A:** {q.get('a_answer', 'N/A')} ({q.get('a_function', 'N/A')})")
+            st.write(f"**B:** {q.get('b_answer', 'N/A')} ({q.get('b_function', 'N/A')})")
             if q.get('additional_info'):
-                st.info(f"Additional Info: {q['additional_info']}")
+                st.info(f"**Additional Info:** {q['additional_info']}")
 
             # --- Voting Section ---
             col1, col2, col3 = st.columns([1, 1, 5])
