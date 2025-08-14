@@ -164,11 +164,13 @@ else:
 page = st.session_state.page
 
 if page == "Home":
-    st.header("Welcome to the Jungian Cognitive Function Test")
+    st.header("Open-source community driven Jung cognitive type test")
     st.write("""
-This test is designed to help you understand your cognitive functions based on the theories of Carl Jung. 
-It avoids the pitfalls of many online personality tests by focusing on the core principles of Jungian psychology.
-Please answer the questions as honestly as possible to get the most accurate results.
+Philosophy: 
+- Strictly based on Jung's works
+- Open source, free and ad-free forever
+- Community questions with references to original works
+- Addressing shortcomings of overlapping or weak types
 """)
     if st.button("Take the Test Now!"):
         set_page("Take Test")
@@ -187,6 +189,27 @@ elif page == "Take Test":
         st.subheader("Your Test Results")
         
         scores = st.session_state.get('final_scores', {})
+        attitude_scores = st.session_state.get('attitude_scores', {})
+
+        # --- Attitude Chart ---
+        st.write("#### Attitude: Introversion (i) vs. Extraversion (e)")
+        attitude_data = {'Introversion (i)': attitude_scores.get('i', 0), 'Extraversion (e)': attitude_scores.get('e', 0)}
+        if any(attitude_data.values()):
+            import pandas as pd
+            import altair as alt
+
+            attitude_df = pd.DataFrame(list(attitude_data.items()), columns=['Attitude', 'Score'])
+
+            attitude_chart = alt.Chart(attitude_df).mark_bar().encode(
+                x='Score:Q',
+                y='Attitude:N',
+                color=alt.Color('Attitude:N', scale=alt.Scale(range=['#ff7f0e', '#1f77b4']))
+            ).properties(
+                title='Attitude Balance'
+            )
+            st.altair_chart(attitude_chart, use_container_width=True)
+        else:
+            st.write("No attitude scores were recorded.")
         
         # --- Chart 1: Ranked Single-Letter Functions ---
         st.write("#### Ranked Primary Functions")
@@ -384,6 +407,7 @@ elif page == "Take Test":
                         "Se": 0, "Si": 0, "Te": 0, "Ti": 0,
                         "F": 0, "T": 0, "N": 0, "S": 0
                     }
+                    attitude_scores = {"i": 0, "e": 0}
                     
                     for i, answer in st.session_state.user_answers.items():
                         q = st.session_state.questions[i]
@@ -418,10 +442,17 @@ elif page == "Take Test":
                             # If it's a detailed function (Fe, Ni), score the general one too (F, N)
                             if len(func) > 1 and func[0] in scores:
                                 scores[func[0]] += 1
+                            
+                            # Score attitude (i vs e) for within_functions questions
+                            if q.get('question_dimension') == 'within_functions' and len(func) > 1:
+                                attitude = func[1]
+                                if attitude in attitude_scores:
+                                    attitude_scores[attitude] += 1
 
                     # Set state to show results
                     st.session_state.test_finished = True
                     st.session_state.final_scores = scores
+                    st.session_state.attitude_scores = attitude_scores
                     st.rerun()
 
 elif page == "Submit Question":
