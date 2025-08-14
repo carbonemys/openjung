@@ -82,23 +82,23 @@ def sign_up(email, password):
 def sign_in(email, password):
     try:
         response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-        if response.user:
-            st.success("Logged in successfully!")
-            st.session_state.user = response.user
-            st.session_state.session = response.session # Store the full session
-        elif response.error:
-            st.error(f"Login failed: {response.error.message}")
+        # The session object contains user, access_token, etc.
+        st.session_state.session = response.session
+        st.success("Logged in successfully!")
     except Exception as e:
-        st.error(f"An unexpected error occurred during login: {e}")
+        st.error(f"Login failed: {e}")
 
 def sign_out():
     try:
         supabase.auth.sign_out()
-        st.session_state.user = None
-        st.session_state.session = None # Clear session on logout
-        st.success("Logged out successfully!")
     except Exception as e:
         st.error(f"Error during sign out: {e}")
+    finally:
+        # Always clear the session state as a fallback
+        st.session_state.session = None
+        st.session_state.user = None
+        st.session_state.user_role = None
+        st.success("Logged out successfully!")
 
 # --- Main App Layout --- #
 st.title("Jungian Cognitive Function Test")
@@ -112,31 +112,43 @@ if DEV_SKIP_LOGIN:
     from types import SimpleNamespace
     # Create a mock user object that mimics the structure of a real Supabase user
     st.session_state.user = SimpleNamespace(email="dev-user@local.com", id="mock_user_id")
-    st.session_state.session = SimpleNamespace() # Mock session object
+    st.session_state.session = None # No session for mock user
+    st.session_state.user_role = 'moderator' # Assume dev user is a mod
     st.warning("DEV MODE: Skipping login. You are logged in as a mock user.")
 
-# Get current user status on each run
-# Prioritize session_state, then try to get from Supabase
-if 'user' not in st.session_state:
-    st.session_state.user = None
-if 'session' not in st.session_state:
-    st.session_state.session = None
-
-# If user is not in session_state, try to get it from Supabase
-if st.session_state.user is None and client_initialized:
+# --- Authentication & Session Management ---
+# On every script run, re-authenticate the Supabase client if a session exists in state.
+if 'session' in st.session_state and st.session_state.session:
     try:
-        session_response = supabase.auth.get_session()
-        print(f"Attempting to get session from Supabase: {session_response}") # Debugging
-        if session_response and session_response.session:
-            st.session_state.user = session_response.session.user
-            st.session_state.session = session_response.session
-            print(f"User from Supabase session: {st.session_state.user.email}") # Debugging
+        # Use the stored session to re-authenticate the client
+        supabase.auth.set_session(
+            st.session_state.session.access_token, 
+            st.session_state.session.refresh_token
+        )
+        # After setting the session, get the user details
+        user_response = supabase.auth.get_user()
+        st.session_state.user = user_response.user
+        
+        # Fetch user role from profiles table
+        profile_response = supabase.table("profiles").select("role").eq("id", st.session_state.user.id).execute()
+        if profile_response.data:
+            st.session_state.user_role = profile_response.data[0]['role']
         else:
-            print("No active session from Supabase.") # Debugging
-    except Exception as e:
-        print(f"Error getting session from Supabase: {e}") # Debugging
+            # This handles cases where a user exists in auth but not profiles
+            st.session_state.user_role = 'user'
+            supabase.table("profiles").insert({"id": st.session_state.user.id, "role": "user"}).execute()
 
-current_user = st.session_state.user
+    except Exception as e:
+        # This can happen if the token is expired or invalid
+        st.error("Your session has expired. Please log in again.")
+        st.session_state.user = None
+        st.session_state.session = None
+        st.session_state.user_role = None
+        print(f"Error setting session: {e}")
+
+# Initialize variables for the rest of the app
+current_user = st.session_state.get('user')
+current_role = st.session_state.get('user_role')
 
 # Sidebar for navigation and auth status
 st.sidebar.title("Navigation")
@@ -175,7 +187,7 @@ if page == "Home":
 
 elif page == "Moderator Tools":
     st.header("Moderator Tools")
-    if current_user: # Protect this page
+    if current_role == 'moderator': # Protect this page
         st.subheader("Add New Question")
 
         with st.form("new_question_form"):
@@ -395,36 +407,178 @@ elif page == "Take Test":
 
 elif page == "Question Bank":
     st.header("Question Bank")
-    st.write("Users can view, upvote, downvote, and comment on questions here.")
 
-    if current_user:
-        st.subheader("Manage Questions")
+    # Moderator View (Full Edit/Delete Access)
+    if current_role == 'moderator':
+        st.subheader("Moderator Tools")
         try:
-            response = supabase.table("questions").select("*").execute()
+            response = supabase.table("questions").select("*").order("id", desc=True).execute()
             questions = response.data
         except Exception as e:
             st.error(f"Error fetching questions: {e}")
             questions = []
 
-        if questions:
-            for q in questions:
-                st.write(f"**Question:** {q['question']}")
-                st.write(f"**Dimension:** {q.get('question_dimension', 'N/A')}") # Use .get for safety
-                st.write(f"**Status:** {q['status']}")
-                new_status = st.selectbox(
-                    "Update Status",
-                    ["draft", "approved", "rejected"],
-                    index=["draft", "approved", "rejected"].index(q['status']),
-                    key=f"status_{q['id']}"
-                )
-                if new_status != q['status']:
+        if not questions:
+            st.info("No questions found. Add some from the 'Moderator Tools' page.")
+            st.stop()
+
+        # Display Questions in a DataFrame
+        import pandas as pd
+        df = pd.DataFrame(questions)
+        display_columns = [
+            'id', 'question', 'status', 'question_dimension', 
+            'a_answer', 'a_function', 'b_answer', 'b_function',
+            'upvotes', 'downvotes' # Add vote counts
+        ]
+        display_columns = [col for col in display_columns if col in df.columns]
+        st.dataframe(df[display_columns])
+
+        st.divider()
+
+        # Edit Question Form
+        st.subheader("Edit a Question")
+        questions_dict = {q['id']: q for q in questions}
+        question_ids = [q['id'] for q in questions]
+        selected_id = st.selectbox("Select Question ID to Edit", options=question_ids)
+
+        if selected_id:
+            selected_question = questions_dict[selected_id]
+            with st.form(key=f"edit_form_{selected_id}"):
+                st.write(f"Editing Question ID: {selected_question['id']}")
+            
+                status_options = ["draft", "approved", "rejected"]
+                current_status_index = status_options.index(selected_question.get('status', 'draft'))
+                dim_options = ["between_functions", "within_functions"]
+                current_dim_index = dim_options.index(selected_question.get('question_dimension', 'between_functions'))
+
+                question_text = st.text_area("Question", value=selected_question.get('question', ''))
+                status = st.selectbox("Status", options=status_options, index=current_status_index)
+                question_dimension = st.selectbox("Dimension", options=dim_options, index=current_dim_index)
+                a_answer = st.text_input("Option A Answer", value=selected_question.get('a_answer', ''))
+                a_function = st.text_input("Option A Function", value=selected_question.get('a_function', ''))
+                b_answer = st.text_input("Option B Answer", value=selected_question.get('b_answer', ''))
+                b_function = st.text_input("Option B Function", value=selected_question.get('b_function', ''))
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    update_button = st.form_submit_button("Update Question")
+                with col2:
+                    delete_button = st.form_submit_button("Delete Question", type="primary")
+
+                if update_button:
                     try:
-                        supabase.table("questions").update({"status": new_status}).eq("id", q['id']).execute()
-                        st.success(f"Question {q['id']} status updated to {new_status}")
+                        update_data = {
+                            "question": question_text,
+                            "status": status,
+                            "question_dimension": question_dimension,
+                            "a_answer": a_answer,
+                            "a_function": a_function,
+                            "b_answer": b_answer,
+                            "b_function": b_function
+                        }
+                        supabase.table("questions").update(update_data).eq("id", selected_id).execute()
+                        st.success(f"Successfully updated Question ID: {selected_id}")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error updating question status: {e}")
-                st.divider()
+                        st.error(f"Failed to update question: {e}")
+                
+                if delete_button:
+                    try:
+                        supabase.table("questions").delete().eq("id", selected_id).execute()
+                        st.success(f"Successfully deleted Question ID: {selected_id}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to delete question: {e}")
+    
+    # Public View (Voting on Approved Questions)
+    else:
+        st.write("Vote on questions to help improve the test.")
+        try:
+            # Fetch only approved questions for public view
+            response = supabase.table("questions").select("*").eq("status", "approved").order("id", desc=True).execute()
+            questions = response.data
+        except Exception as e:
+            st.error(f"Error fetching questions: {e}")
+            questions = []
+
+        if not questions:
+            st.info("There are no approved questions to display yet.")
+            st.stop()
+
+        # Initialize voted state
+        if 'voted_on' not in st.session_state:
+            st.session_state.voted_on = []
+
+        for q in questions:
+            st.write(f"**Question:** {q['question']}")
+            st.write(f"A: {q['a_answer']} ({q['a_function']})")
+            st.write(f"B: {q['b_answer']} ({q['b_function']})")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                upvote_disabled = q['id'] in st.session_state.voted_on
+                if st.button(f"👍 Upvote ({q.get('upvotes', 0)})", key=f"up_{q['id']}", disabled=upvote_disabled):
+                    try:
+                        new_count = q.get('upvotes', 0) + 1
+                        supabase.table("questions").update({"upvotes": new_count}).eq("id", q['id']).execute()
+                        st.session_state.voted_on.append(q['id'])
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error upvoting: {e}")
+            with col2:
+                downvote_disabled = q['id'] in st.session_state.voted_on
+                if st.button(f"👎 Downvote ({q.get('downvotes', 0)})", key=f"down_{q['id']}", disabled=downvote_disabled):
+                    try:
+                        new_count = q.get('downvotes', 0) + 1
+                        supabase.table("questions").update({"downvotes": new_count}).eq("id", q['id']).execute()
+                        st.session_state.voted_on.append(q['id'])
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error downvoting: {e}")
+
+            # --- Comments Section ---
+            with st.expander("View and Add Comments"):
+                # Fetch and display existing comments
+                try:
+                    comment_response = supabase.table("comments").select("*, profiles(role)").eq("question_id", q['id']).order("created_at", desc=True).execute()
+                    comments = comment_response.data
+                    
+                    if comments:
+                        for comment in comments:
+                            commenter_role = "User" # Default
+                            if comment.get('profiles') and comment['profiles'].get('role'):
+                                commenter_role = comment['profiles']['role'].capitalize()
+                            
+                            st.markdown(f"**{commenter_role}:** {comment['comment_text']}")
+                            st.caption(f"Posted at: {comment['created_at']}")
+                    else:
+                        st.write("No comments yet.")
+
+                except Exception as e:
+                    st.error(f"Error fetching comments: {e}")
+
+                # Form to add a new comment (only for logged-in users)
+                if current_user:
+                    with st.form(key=f"comment_form_{q['id']}", clear_on_submit=True):
+                        comment_text = st.text_area("Write a comment...", key=f"comment_text_{q['id']}")
+                        submit_comment = st.form_submit_button("Post Comment")
+
+                        if submit_comment and comment_text:
+                            try:
+                                supabase.table("comments").insert({
+                                    "question_id": q['id'],
+                                    "user_id": current_user.id,
+                                    "comment_text": comment_text
+                                }).execute()
+                                st.success("Comment posted!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error posting comment: {e}")
+                else:
+                    st.info("You must be logged in to post a comment.")
+            
+            st.divider()
+
 
 
 
