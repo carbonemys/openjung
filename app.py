@@ -3,6 +3,110 @@ import streamlit as st
 from supabase import create_client, Client
 from dotenv import load_dotenv, dotenv_values
 import os
+import random
+
+def calculate_mbti_analysis(scores, attitude_scores):
+    analysis = {}
+
+    # I/E
+    i_score = attitude_scores.get('i', 0)
+    e_score = attitude_scores.get('e', 0)
+    total_ie = i_score + e_score
+    if total_ie > 0:
+        i_percent = i_score / total_ie
+        e_percent = e_score / total_ie
+        preference = 'I' if i_percent > e_percent else 'E'
+        strength = abs(i_percent - e_percent)
+        analysis['I/E'] = {
+            'positive': 'Introversion',
+            'negative': 'Extraversion',
+            'opposite': 'E',
+            'percentage': i_percent,
+            'preference': preference,
+            'strength': f"{strength:.0%}"
+        }
+
+    # N/S
+    n_score = scores.get('N', 0)
+    s_score = scores.get('S', 0)
+    total_ns = n_score + s_score
+    if total_ns > 0:
+        n_percent = n_score / total_ns
+        s_percent = s_score / total_ns
+        preference = 'N' if n_percent > s_percent else 'S'
+        strength = abs(n_percent - s_percent)
+        analysis['N/S'] = {
+            'positive': 'Intuition',
+            'negative': 'Sensing',
+            'opposite': 'S',
+            'percentage': n_percent,
+            'preference': preference,
+            'strength': f"{strength:.0%}"
+        }
+
+    # T/F
+    t_score = scores.get('T', 0)
+    f_score = scores.get('F', 0)
+    total_tf = t_score + f_score
+    if total_tf > 0:
+        t_percent = t_score / total_tf
+        f_percent = f_score / total_tf
+        preference = 'T' if t_percent > f_percent else 'F'
+        strength = abs(t_percent - f_percent)
+        analysis['T/F'] = {
+            'positive': 'Thinking',
+            'negative': 'Feeling',
+            'opposite': 'F',
+            'percentage': t_percent,
+            'preference': preference,
+            'strength': f"{strength:.0%}"
+        }
+
+    # J/P
+    # Determine the dominant function from all detailed functions
+    all_functions = {
+        'Te': scores.get('Te', 0), 'Ti': scores.get('Ti', 0),
+        'Fe': scores.get('Fe', 0), 'Fi': scores.get('Fi', 0),
+        'Ne': scores.get('Ne', 0), 'Ni': scores.get('Ni', 0),
+        'Se': scores.get('Se', 0), 'Si': scores.get('Si', 0)
+    }
+    
+    # Find the function with the highest score
+    # In case of a tie, the first one encountered will be chosen, which is an acceptable simplification
+    dominant_function = max(all_functions, key=all_functions.get)
+
+    # Determine J/P based on the dominant function's type (Rational/Judging vs. Irrational/Perceiving)
+    # Rational/Judging functions: T and F
+    # Irrational/Perceiving functions: N and S
+    if dominant_function[0] in ['T', 'F']:
+        preference = 'J'
+    else: # N or S
+        preference = 'P'
+
+    # Calculate a 'strength' for J/P based on the dominance of that function type
+    judging_score = scores.get('T', 0) + scores.get('F', 0)
+    perceiving_score = scores.get('N', 0) + scores.get('S', 0)
+    total_jp = judging_score + perceiving_score
+
+    if total_jp > 0:
+        j_percent = judging_score / total_jp
+        p_percent = perceiving_score / total_jp
+        jp_strength = abs(j_percent - p_percent)
+        percentage = j_percent
+    else:
+        jp_strength = 0
+        percentage = 0.5 # Default to neutral if no scores
+
+    analysis['J/P'] = {
+        'positive': 'Judging',
+        'negative': 'Perceiving',
+        'opposite': 'P' if preference == 'J' else 'J',
+        'percentage': percentage,
+        'preference': preference,
+        'strength': f"{jp_strength:.0%}"
+    }
+
+    return analysis
 
 # Load environment variables from .env file
 load_dotenv()
@@ -166,12 +270,12 @@ page = st.session_state.page
 if page == "Home":
     st.header("Open-source community driven Jung cognitive type test")
     st.write("""
-Philosophy: 
-- Strictly based on Jung's works
-- Open source, free and ad-free forever
-- Community questions with references to original works
-- Addressing shortcomings of overlapping or weak types
-""")
+    Philosophy: 
+    - Strictly based on Jung's works
+    - Open source, free and ad-free forever
+    - Community questions with references to original works
+    - Addressing shortcomings of overlapping or weak types
+    """)
     if st.button("Take the Test Now!"):
         set_page("Take Test")
         st.rerun()
@@ -243,7 +347,7 @@ elif page == "Take Test":
             st.write("No primary function scores were recorded.")
 
         # --- Chart 2: Function Dichotomies (Diverging Bar Chart) ---
-        st.write("#### Function Dichotomies")
+        st.write("#### Function Dichotomies - Relative")
         dichotomy_pairs = [('Fe', 'Fi'), ('Ne', 'Ni'), ('Se', 'Si'), ('Te', 'Ti')]
         
         chart_data = []
@@ -285,7 +389,7 @@ elif page == "Take Test":
             st.write("No detailed function scores were recorded.")
 
         # --- Chart 3: Blended Function Dichotomies ---
-        st.write("#### Blended Function Strength")
+        st.write("#### Function dichotomies - Weighed")
         
         blended_chart_data = []
         for func1, func2 in dichotomy_pairs:
@@ -329,6 +433,15 @@ elif page == "Take Test":
             st.write("No blended function scores could be calculated.")
 
 
+        # --- MBTI Preference Analysis ---
+        st.write("#### MBTI Preference Analysis")
+        mbti_analysis = calculate_mbti_analysis(scores, attitude_scores)
+        for letter, data in mbti_analysis.items():
+            st.write(f"**{data['positive']} ({letter.split('/')[0]}) vs. {data['negative']} ({letter.split('/')[1]})**")
+            st.progress(data['percentage'])
+            st.write(f"{data['strength']} preference for **{data['preference']}**")
+
+
         if st.button("Take Test Again"):
             # Clear the results and test state to start over
             st.session_state.test_finished = False
@@ -366,22 +479,12 @@ elif page == "Take Test":
             st.subheader(f"Question {current_index + 1}")
             st.write(current_question['question'])
 
-            # Randomize A and B options
-            options = [
-                {"text": current_question['a_answer'], "function": current_question['a_function'], "type": "A"},
-                {"text": current_question['b_answer'], "function": current_question['b_function'], "type": "B"}
-            ]
-            import random
-            # Use a seed based on the question ID to ensure consistent shuffling for results calculation
-            random.seed(current_question['id'])
-            random.shuffle(options)
-
             # Display options
             selected_option = st.radio(
                 "Choose an option:",
                 [
-                    f"A: {options[0]['text']}",
-                    f"B: {options[1]['text']}",
+                    f"A: {current_question['a_answer']}",
+                    f"B: {current_question['b_answer']}",
                     "Neither",
                     "Both"
                 ],
@@ -416,20 +519,10 @@ elif page == "Take Test":
                         if answer == "Both":
                             functions_to_score.append(q['a_function'])
                             functions_to_score.append(q['b_function'])
-                        elif answer != "Neither":  # Handles A or B choices
-                            q_options = [
-                                {"text": q['a_answer'], "function": q['a_function']},
-                                {"text": q['b_answer'], "function": q['b_function']}
-                            ]
-                            # Re-shuffle with the same seed to find the chosen function
-                            random.seed(q['id'])
-                            random.shuffle(q_options)
-
-                            chosen_text = answer.split(": ", 1)[1]
-                            if q_options[0]['text'] == chosen_text:
-                                functions_to_score.append(q_options[0]['function'])
-                            elif q_options[1]['text'] == chosen_text:
-                                functions_to_score.append(q_options[1]['function'])
+                        elif answer.startswith("A:"):
+                            functions_to_score.append(q['a_function'])
+                        elif answer.startswith("B:"):
+                            functions_to_score.append(q['b_function'])
 
                         # Process the scoring
                         for func in functions_to_score:
