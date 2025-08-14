@@ -150,16 +150,41 @@ if 'session' in st.session_state and st.session_state.session:
 current_user = st.session_state.get('user')
 current_role = st.session_state.get('user_role')
 
-# Sidebar for navigation and auth status
+# --- Sidebar ---
 st.sidebar.title("Navigation")
 
+# Initialize page state if it doesn't exist
+if 'page' not in st.session_state:
+    st.session_state.page = "Home"
+
+# --- Navigation Buttons ---
+# A function to set the page, for cleaner button code
+def set_page(page_name):
+    st.session_state.page = page_name
+
+# Use columns for a more compact layout if desired, or just buttons
+if st.sidebar.button("Home", use_container_width=True):
+    set_page("Home")
+if st.sidebar.button("Take Test", use_container_width=True):
+    set_page("Take Test")
+if st.sidebar.button("Question Bank", use_container_width=True):
+    set_page("Question Bank")
+
+# Conditional Moderator Tools button
+if current_role == 'moderator':
+    if st.sidebar.button("Moderator Tools", use_container_width=True):
+        set_page("Moderator Tools")
+
+st.sidebar.divider()
+
+# --- Authentication Section ---
 if current_user:
     st.sidebar.write(f"Logged in as: {current_user.email}")
-    if st.sidebar.button("Logout"): 
+    if st.sidebar.button("Logout", use_container_width=True):
         sign_out()
         st.rerun()
 else:
-    st.sidebar.write("Not logged in.")
+    st.sidebar.write("You are not logged in.")
     with st.sidebar.form("auth_form"):
         st.subheader("Login / Sign Up")
         email = st.text_input("Email")
@@ -175,7 +200,7 @@ else:
                 sign_up(email, password)
                 st.rerun()
 
-page = st.sidebar.radio("Go to", ["Home", "Moderator Tools", "Take Test", "Question Bank"])
+page = st.session_state.page
 
 if page == "Home":
     st.header("Welcome")
@@ -490,12 +515,12 @@ elif page == "Question Bank":
                     except Exception as e:
                         st.error(f"Failed to delete question: {e}")
     
-    # Public View (Voting on Approved Questions)
+    # Public / User View
     else:
-        st.write("Vote on questions to help improve the test.")
+        st.write("Here you can view and discuss approved questions.")
         try:
-            # Fetch only approved questions for public view
-            response = supabase.table("questions").select("*").eq("status", "approved").order("id", desc=True).execute()
+            # Fetch questions and their comments in one go.
+            response = supabase.table("questions").select("*, comments(*, profiles(role))").eq("status", "approved").order("id", desc=True).execute()
             questions = response.data
         except Exception as e:
             st.error(f"Error fetching questions: {e}")
@@ -505,7 +530,6 @@ elif page == "Question Bank":
             st.info("There are no approved questions to display yet.")
             st.stop()
 
-        # Initialize voted state
         if 'voted_on' not in st.session_state:
             st.session_state.voted_on = []
 
@@ -514,10 +538,12 @@ elif page == "Question Bank":
             st.write(f"A: {q['a_answer']} ({q['a_function']})")
             st.write(f"B: {q['b_answer']} ({q['b_function']})")
             
-            col1, col2, col3, col4 = st.columns(4)
+            # --- Voting Section ---
+            col1, col2, col3 = st.columns([1, 1, 5])
             with col1:
-                upvote_disabled = q['id'] in st.session_state.voted_on
-                if st.button(f"👍 Upvote ({q.get('upvotes', 0)})", key=f"up_{q['id']}", disabled=upvote_disabled):
+                # Disable buttons if not logged in OR if already voted
+                vote_disabled = not current_user or q['id'] in st.session_state.voted_on
+                if st.button(f"👍 ({q.get('upvotes', 0)})", key=f"up_{q['id']}", disabled=vote_disabled):
                     try:
                         new_count = q.get('upvotes', 0) + 1
                         supabase.table("questions").update({"upvotes": new_count}).eq("id", q['id']).execute()
@@ -526,8 +552,8 @@ elif page == "Question Bank":
                     except Exception as e:
                         st.error(f"Error upvoting: {e}")
             with col2:
-                downvote_disabled = q['id'] in st.session_state.voted_on
-                if st.button(f"👎 Downvote ({q.get('downvotes', 0)})", key=f"down_{q['id']}", disabled=downvote_disabled):
+                vote_disabled = not current_user or q['id'] in st.session_state.voted_on
+                if st.button(f"👎 ({q.get('downvotes', 0)})", key=f"down_{q['id']}", disabled=vote_disabled):
                     try:
                         new_count = q.get('downvotes', 0) + 1
                         supabase.table("questions").update({"downvotes": new_count}).eq("id", q['id']).execute()
@@ -538,31 +564,22 @@ elif page == "Question Bank":
 
             # --- Comments Section ---
             with st.expander("View and Add Comments"):
-                # Fetch and display existing comments
-                try:
-                    comment_response = supabase.table("comments").select("*, profiles(role)").eq("question_id", q['id']).order("created_at", desc=True).execute()
-                    comments = comment_response.data
-                    
-                    if comments:
-                        for comment in comments:
-                            commenter_role = "User" # Default
-                            if comment.get('profiles') and comment['profiles'].get('role'):
-                                commenter_role = comment['profiles']['role'].capitalize()
-                            
-                            st.markdown(f"**{commenter_role}:** {comment['comment_text']}")
-                            st.caption(f"Posted at: {comment['created_at']}")
-                    else:
-                        st.write("No comments yet.")
+                comments = q.get('comments', [])
+                if comments:
+                    for comment in comments:
+                        commenter_role = "User"
+                        if comment.get('profiles') and comment['profiles'].get('role'):
+                            commenter_role = comment['profiles']['role'].capitalize()
+                        st.markdown(f"**{commenter_role}:** {comment['comment_text']}")
+                        st.caption(f"Posted at: {comment['created_at']}")
+                else:
+                    st.write("No comments yet.")
 
-                except Exception as e:
-                    st.error(f"Error fetching comments: {e}")
-
-                # Form to add a new comment (only for logged-in users)
+                # Show comment form ONLY to logged-in users
                 if current_user:
                     with st.form(key=f"comment_form_{q['id']}", clear_on_submit=True):
                         comment_text = st.text_area("Write a comment...", key=f"comment_text_{q['id']}")
                         submit_comment = st.form_submit_button("Post Comment")
-
                         if submit_comment and comment_text:
                             try:
                                 supabase.table("comments").insert({
@@ -574,8 +591,9 @@ elif page == "Question Bank":
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error posting comment: {e}")
+                # Show message to guests
                 else:
-                    st.info("You must be logged in to post a comment.")
+                    st.info("Log in to vote or post a comment.")
             
             st.divider()
 
