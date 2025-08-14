@@ -610,6 +610,16 @@ elif page == "Question Bank":
         st.info("No questions match your current filter settings.")
         st.stop()
 
+    # Fetch all votes by the current user to disable voting buttons
+    user_votes = {}
+    if current_user:
+        try:
+            vote_response = supabase.table("votes").select("question_id, vote_type").eq("user_id", current_user.id).execute()
+            # Create a dictionary for quick lookup: {question_id: vote_type}
+            user_votes = {v['question_id']: v['vote_type'] for v in vote_response.data}
+        except Exception as e:
+            st.error(f"Error fetching your votes: {e}")
+
     # Initialize session state for voted questions to prevent re-voting
     if 'voted_on' not in st.session_state:
         st.session_state.voted_on = {}
@@ -626,29 +636,44 @@ elif page == "Question Bank":
             # --- Voting Section ---
             col1, col2, col3 = st.columns([1, 1, 5])
             
-            # FIX: Ensure vote_disabled is always a boolean
-            is_voted = bool(st.session_state.voted_on.get(q['id']))
-            vote_disabled = not current_user or is_voted
+            # Check if the user has already voted on this question
+            has_voted = q['id'] in user_votes
+            vote_disabled = not current_user or has_voted
 
             with col1:
-                if st.button(f"👍 ({q.get('upvotes', 0)})", key=f"up_{q['id']}", disabled=vote_disabled, help="You must be logged in to vote."):
+                if st.button(f"👍 ({q.get('upvotes', 0)})", key=f"up_{q['id']}", disabled=vote_disabled, help="You must be logged in to vote, and can only vote once."):
                     try:
-                        # Use an RPC call for atomic increment to prevent race conditions
+                        # Increment the upvote count in the questions table
                         supabase.rpc('increment_upvotes', {'question_id_to_update': q['id']}).execute()
-                        st.session_state.voted_on[q['id']] = 'up'
+                        # Record the vote in the votes table
+                        supabase.table('votes').insert({
+                            'user_id': current_user.id,
+                            'question_id': q['id'],
+                            'vote_type': 'up'
+                        }).execute()
+                        # Update local state to disable button immediately
+                        user_votes[q['id']] = 'up'
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error upvoting: {e}")
             with col2:
-                if st.button(f"👎 ({q.get('downvotes', 0)})", key=f"down_{q['id']}", disabled=vote_disabled, help="You must be logged in to vote."):
+                if st.button(f"👎 ({q.get('downvotes', 0)})", key=f"down_{q['id']}", disabled=vote_disabled, help="You must be logged in to vote, and can only vote once."):
                     try:
+                        # Increment the downvote count in the questions table
                         supabase.rpc('increment_downvotes', {'question_id_to_update': q['id']}).execute()
-                        st.session_state.voted_on[q['id']] = 'down'
+                        # Record the vote in the votes table
+                        supabase.table('votes').insert({
+                            'user_id': current_user.id,
+                            'question_id': q['id'],
+                            'vote_type': 'down'
+                        }).execute()
+                        # Update local state to disable button immediately
+                        user_votes[q['id']] = 'down'
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error downvoting: {e}")
             
-            if vote_disabled and current_user:
+            if has_voted and current_user:
                 st.caption(f"You have already voted on this question.")
 
 
