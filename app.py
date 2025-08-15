@@ -360,6 +360,15 @@ elif page == "Take Test":
                 columns=['Function', 'Score']
             ).sort_values('Score', ascending=False)
 
+            # Map single letters to full names for the chart
+            function_map = {
+                'N': 'Intuition (N)',
+                'S': 'Sensing (S)',
+                'T': 'Thinking (T)',
+                'F': 'Feeling (F)'
+            }
+            ranked_df['Function'] = ranked_df['Function'].map(function_map)
+
             bar = alt.Chart(ranked_df).mark_bar().encode(
                 x=alt.X('Score', type='quantitative'),
                 y=alt.Y('Function', type='nominal', sort='-x')
