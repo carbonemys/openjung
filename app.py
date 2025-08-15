@@ -1,7 +1,6 @@
 
 import streamlit as st
 from supabase import create_client, Client
-from dotenv import load_dotenv, dotenv_values
 import os
 import random
 
@@ -238,12 +237,10 @@ def calculate_cognitive_profile(scores):
 
     return profile
 
-# Load environment variables from .env file
-load_dotenv()
+# Get Supabase credentials from st.secrets
+supabase_url = st.secrets["supabaseurl"]
+supabase_key = st.secrets["SUPABASE_ANON_KEY"]
 
-# Get Supabase credentials from .env file
-supabase_url = dotenv_values().get("supabaseurl")
-supabase_key = dotenv_values().get("SUPABASE_ANON_KEY")
 
 # Initialize Supabase client
 # Handle potential errors during initialization
@@ -295,18 +292,7 @@ def sign_out():
 # --- Main App Layout --- #
 st.title("Jungian Cognitive Function Test")
 
-# --- Dev Mode: Skip Login --- #
-# WARNING: This is for local development only.
-# Set DEV_SKIP_LOGIN="true" in your .env file to bypass authentication.
-DEV_SKIP_LOGIN = os.getenv("DEV_SKIP_LOGIN", "false").lower() == "true"
 
-if DEV_SKIP_LOGIN:
-    from types import SimpleNamespace
-    # Create a mock user object that mimics the structure of a real Supabase user
-    st.session_state.user = SimpleNamespace(email="dev-user@local.com", id="mock_user_id")
-    st.session_state.session = None # No session for mock user
-    st.session_state.user_role = 'moderator' # Assume dev user is a mod
-    st.warning("DEV MODE: Skipping login. You are logged in as a mock user.")
 
 # --- Authentication & Session Management ---
 # On every script run, re-authenticate the Supabase client if a session exists in state.

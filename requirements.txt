@@ -1,6 +1,5 @@
 streamlit
 supabase
-python-dotenv
 pandas
 altair
 types-python-dateutil
