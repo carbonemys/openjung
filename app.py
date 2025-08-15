@@ -140,6 +140,104 @@ def calculate_mbti_analysis(scores, attitude_scores):
 
     return analysis
 
+def calculate_cognitive_profile(scores):
+    profile = {}
+    
+    # Detailed function scores
+    detailed_scores = {
+        'Te': scores.get('Te', 0), 'Ti': scores.get('Ti', 0),
+        'Fe': scores.get('Fe', 0), 'Fi': scores.get('Fi', 0),
+        'Ne': scores.get('Ne', 0), 'Ni': scores.get('Ni', 0),
+        'Se': scores.get('Se', 0), 'Si': scores.get('Si', 0)
+    }
+
+    # Primary function letter scores
+    primary_scores = {
+        'T': scores.get('T', 0),
+        'F': scores.get('F', 0),
+        'N': scores.get('N', 0),
+        'S': scores.get('S', 0)
+    }
+
+    if not any(primary_scores.values()):
+        return {"error": "Not enough data for cognitive profile."}
+
+    # 1. Determine Primary Function
+    primary_letter = max(primary_scores, key=primary_scores.get)
+    
+    # Determine if it's introverted or extroverted
+    func1 = f"{primary_letter}e"
+    func2 = f"{primary_letter}i"
+    
+    # Handle cases where one of the detailed functions might not be in the scores
+    score1 = detailed_scores.get(func1, 0)
+    score2 = detailed_scores.get(func2, 0)
+
+    primary_function = func1 if score1 >= score2 else func2
+    primary_attitude = primary_function[1]
+
+    # 2. Determine Secondary Function
+    secondary_letter = ''
+    if primary_letter in ['T', 'F']: # Judging
+        secondary_letter = 'N' if primary_scores.get('N', 0) >= primary_scores.get('S', 0) else 'S'
+    else: # Perceiving
+        secondary_letter = 'T' if primary_scores.get('T', 0) >= primary_scores.get('F', 0) else 'F'
+        
+    secondary_attitude = 'e' if primary_attitude == 'i' else 'i'
+    secondary_function = f"{secondary_letter}{secondary_attitude}"
+
+    # 3. Determine Inferior Function
+    inferior_map = {
+        'Ti': 'Fe', 'Te': 'Fi', 'Fi': 'Te', 'Fe': 'Ti',
+        'Ni': 'Se', 'Ne': 'Si', 'Si': 'Ne', 'Se': 'Ni'
+    }
+    inferior_function = inferior_map.get(primary_function)
+
+    # 4. Determine Strength
+    def get_strength_label(score, total):
+        if total == 0:
+            return "Weak"
+        strength_val = score / total
+        if strength_val > 0.75:
+            return "Strong"
+        elif strength_val > 0.60:
+            return "Moderate"
+        else:
+            return "Weak"
+
+    # Strength for Primary
+    primary_total = primary_scores.get(primary_letter, 0)
+    primary_specific_score = detailed_scores.get(primary_function, 0)
+    
+    # To calculate strength, we need a consistent denominator.
+    # Let's use the sum of the two detailed functions of that type.
+    primary_pair_total = detailed_scores.get(func1, 0) + detailed_scores.get(func2, 0)
+    primary_strength = get_strength_label(primary_specific_score, primary_pair_total)
+
+    # Strength for Secondary
+    sec_func1 = f"{secondary_letter}e"
+    sec_func2 = f"{secondary_letter}i"
+    secondary_specific_score = detailed_scores.get(secondary_function, 0)
+    secondary_pair_total = detailed_scores.get(sec_func1, 0) + detailed_scores.get(sec_func2, 0)
+    secondary_strength = get_strength_label(secondary_specific_score, secondary_pair_total)
+
+    # Strength for Inferior
+    inf_func1 = f"{inferior_function[0]}e"
+    inf_func2 = f"{inferior_function[0]}i"
+    inferior_specific_score = detailed_scores.get(inferior_function, 0)
+    inferior_pair_total = detailed_scores.get(inf_func1, 0) + detailed_scores.get(inf_func2, 0)
+    inferior_strength = get_strength_label(inferior_specific_score, inferior_pair_total)
+
+
+    profile = {
+        "primary": {"function": primary_function, "strength": primary_strength},
+        "secondary": {"function": secondary_function, "strength": secondary_strength},
+        "inferior": {"function": inferior_function, "strength": inferior_strength},
+        "profile_string": f"{primary_function}-{secondary_function}-{inferior_function}"
+    }
+
+    return profile
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -490,6 +588,17 @@ elif page == "Take Test":
             st.progress(data['percentage'])
             st.write(f"{data['strength']} preference for **{data['preference']}** ({data.get('strength_label', 'Weak')})")
 
+
+        # --- Cognitive Function Profile ---
+        st.write("#### Cognitive Function Profile")
+        cognitive_profile = calculate_cognitive_profile(scores)
+        if "error" in cognitive_profile:
+            st.warning(cognitive_profile["error"])
+        else:
+            st.subheader(f"Your Profile: {cognitive_profile.get('profile_string', '----')}")
+            st.write(f"**Primary Function:** {cognitive_profile['primary']['function']} ({cognitive_profile['primary']['strength']})")
+            st.write(f"**Secondary Function:** {cognitive_profile['secondary']['function']} ({cognitive_profile['secondary']['strength']})")
+            st.write(f"**Inferior Function:** {cognitive_profile['inferior']['function']} ({cognitive_profile['inferior']['strength']})")
 
         if st.button("Take Test Again"):
             # Clear the results and test state to start over
