@@ -7,6 +7,17 @@ import random
 
 def calculate_mbti_analysis(scores, attitude_scores):
     analysis = {}
+    mbti_type = ""
+    total_strength = 0
+    preference_count = 0
+
+    def get_strength_label(strength_val):
+        if strength_val > 0.75:
+            return "Strong"
+        elif strength_val > 0.60:
+            return "Moderate"
+        else:
+            return "Weak"
 
     # I/E
     i_score = attitude_scores.get('i', 0)
@@ -23,8 +34,12 @@ def calculate_mbti_analysis(scores, attitude_scores):
             'opposite': 'E',
             'percentage': i_percent,
             'preference': preference,
-            'strength': f"{strength:.0%}"
+            'strength': f"{strength:.0%}",
+            'strength_label': get_strength_label(max(i_percent, e_percent))
         }
+        mbti_type += preference
+        total_strength += max(i_percent, e_percent)
+        preference_count += 1
 
     # N/S
     n_score = scores.get('N', 0)
@@ -41,8 +56,12 @@ def calculate_mbti_analysis(scores, attitude_scores):
             'opposite': 'S',
             'percentage': n_percent,
             'preference': preference,
-            'strength': f"{strength:.0%}"
+            'strength': f"{strength:.0%}",
+            'strength_label': get_strength_label(max(n_percent, s_percent))
         }
+        mbti_type += preference
+        total_strength += max(n_percent, s_percent)
+        preference_count += 1
 
     # T/F
     t_score = scores.get('T', 0)
@@ -59,8 +78,12 @@ def calculate_mbti_analysis(scores, attitude_scores):
             'opposite': 'F',
             'percentage': t_percent,
             'preference': preference,
-            'strength': f"{strength:.0%}"
+            'strength': f"{strength:.0%}",
+            'strength_label': get_strength_label(max(t_percent, f_percent))
         }
+        mbti_type += preference
+        total_strength += max(t_percent, f_percent)
+        preference_count += 1
 
     # J/P
     # Determine the dominant function from all detailed functions
@@ -103,8 +126,17 @@ def calculate_mbti_analysis(scores, attitude_scores):
         'opposite': 'P' if preference == 'J' else 'J',
         'percentage': percentage,
         'preference': preference,
-        'strength': f"{jp_strength:.0%}"
+        'strength': f"{jp_strength:.0%}",
+        'strength_label': get_strength_label(max(j_percent, p_percent))
     }
+    mbti_type += preference
+    total_strength += max(j_percent, p_percent)
+    preference_count += 1
+
+    # Overall strength
+    overall_strength_value = total_strength / preference_count if preference_count > 0 else 0
+    analysis['overall_strength'] = get_strength_label(overall_strength_value)
+    analysis['mbti_type'] = mbti_type
 
     return analysis
 
@@ -438,10 +470,16 @@ elif page == "Take Test":
         # --- MBTI Preference Analysis ---
         st.write("#### MBTI Preference Analysis")
         mbti_analysis = calculate_mbti_analysis(scores, attitude_scores)
+        
+        st.subheader(f"Your Type: {mbti_analysis.get('mbti_type', '----')}")
+        st.write(f"**Overall Strength:** {mbti_analysis.get('overall_strength', 'Unknown')}")
+        st.divider()
+
         for letter, data in mbti_analysis.items():
+            if '/' not in letter: continue
             st.write(f"**{data['positive']} ({letter.split('/')[0]}) vs. {data['negative']} ({letter.split('/')[1]})**")
             st.progress(data['percentage'])
-            st.write(f"{data['strength']} preference for **{data['preference']}**")
+            st.write(f"{data['strength']} preference for **{data['preference']}** ({data.get('strength_label', 'Weak')})")
 
 
         if st.button("Take Test Again"):
