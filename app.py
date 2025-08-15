@@ -348,7 +348,7 @@ elif page == "Take Test":
 
         # --- Chart 2: Function Dichotomies (Diverging Bar Chart) ---
         st.write("#### Function Dichotomies - Relative")
-        dichotomy_pairs = [('Fe', 'Fi', 'Feeling'), ('Ne', 'Ni', 'Intuition'), ('Se', 'Si', 'Sensing'), ('Te', 'Ti', 'Thinking')]
+        dichotomy_pairs = [('Te', 'Ti', 'Thinking'), ('Fe', 'Fi', 'Feeling'), ('Ne', 'Ni', 'Intuition'), ('Se', 'Si', 'Sensing')]
         
         chart_data = []
         for func1, func2, name in dichotomy_pairs:
@@ -362,10 +362,11 @@ elif page == "Take Test":
             import altair as alt
 
             df = pd.DataFrame(chart_data)
+            y_axis_order = ['Thinking', 'Feeling', 'Intuition', 'Sensing']
 
             bar = alt.Chart(df).mark_bar().encode(
                 x='score:Q',
-                y='pair:N',
+                y=alt.Y('pair:N', sort=y_axis_order),
                 color=alt.Color('function:N',
                                 scale=alt.Scale(
                                     domain=['Fe', 'Fi', 'Ne', 'Ni', 'Se', 'Si', 'Te', 'Ti'],
@@ -379,7 +380,7 @@ elif page == "Take Test":
                 dx=3
             ).encode(
                 x='score:Q',
-                y='pair:N',
+                y=alt.Y('pair:N', sort=y_axis_order),
                 text='function:N'
             )
 
@@ -406,10 +407,11 @@ elif page == "Take Test":
             import altair as alt
 
             df_blended = pd.DataFrame(blended_chart_data)
+            y_axis_order = ['Thinking', 'Feeling', 'Intuition', 'Sensing']
 
             bar = alt.Chart(df_blended).mark_bar().encode(
                 x='score:Q',
-                y='pair:N',
+                y=alt.Y('pair:N', sort=y_axis_order),
                 color=alt.Color('function:N',
                                 scale=alt.Scale(
                                     domain=['Fe', 'Fi', 'Ne', 'Ni', 'Se', 'Si', 'Te', 'Ti'],
@@ -423,7 +425,7 @@ elif page == "Take Test":
                 dx=3
             ).encode(
                 x='score:Q',
-                y='pair:N',
+                y=alt.Y('pair:N', sort=y_axis_order),
                 text='function:N'
             )
 
