@@ -348,14 +348,14 @@ elif page == "Take Test":
 
         # --- Chart 2: Function Dichotomies (Diverging Bar Chart) ---
         st.write("#### Function Dichotomies - Relative")
-        dichotomy_pairs = [('Fe', 'Fi'), ('Ne', 'Ni'), ('Se', 'Si'), ('Te', 'Ti')]
+        dichotomy_pairs = [('Fe', 'Fi', 'Feeling'), ('Ne', 'Ni', 'Intuition'), ('Se', 'Si', 'Sensing'), ('Te', 'Ti', 'Thinking')]
         
         chart_data = []
-        for func1, func2 in dichotomy_pairs:
+        for func1, func2, name in dichotomy_pairs:
             score1 = scores.get(func1, 0)
             score2 = scores.get(func2, 0)
-            chart_data.append({'pair': f'{func1} / {func2}', 'function': func1, 'score': score1, 'abs_score': score1})
-            chart_data.append({'pair': f'{func1} / {func2}', 'function': func2, 'score': -score2, 'abs_score': score2})
+            chart_data.append({'pair': name, 'function': func1, 'score': score1, 'abs_score': score1})
+            chart_data.append({'pair': name, 'function': func2, 'score': -score2, 'abs_score': score2})
 
         if chart_data:
             import pandas as pd
@@ -380,7 +380,7 @@ elif page == "Take Test":
             ).encode(
                 x='score:Q',
                 y='pair:N',
-                text='abs_score:Q'
+                text='function:N'
             )
 
             chart = (bar + text).properties(title='Function Pair Balances')
@@ -392,14 +392,14 @@ elif page == "Take Test":
         st.write("#### Function dichotomies - Weighed")
         
         blended_chart_data = []
-        for func1, func2 in dichotomy_pairs:
+        for func1, func2, name in dichotomy_pairs:
             parent_func = func1[0]
             
             score1 = scores.get(func1, 0) * scores.get(parent_func, 0)
             score2 = scores.get(func2, 0) * scores.get(parent_func, 0)
             
-            blended_chart_data.append({'pair': f'{func1} / {func2}', 'function': func1, 'score': score1, 'abs_score': score1})
-            blended_chart_data.append({'pair': f'{func1} / {func2}', 'function': func2, 'score': -score2, 'abs_score': score2})
+            blended_chart_data.append({'pair': name, 'function': func1, 'score': score1, 'abs_score': score1})
+            blended_chart_data.append({'pair': name, 'function': func2, 'score': -score2, 'abs_score': score2})
 
         if blended_chart_data:
             import pandas as pd
@@ -424,7 +424,7 @@ elif page == "Take Test":
             ).encode(
                 x='score:Q',
                 y='pair:N',
-                text='abs_score:Q'
+                text='function:N'
             )
 
             blended_chart = (bar + text).properties(title='Blended Function Pair Balances (Weighted by Primary Function)')
